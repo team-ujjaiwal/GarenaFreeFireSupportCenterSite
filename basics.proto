@@ -1,0 +1,89 @@
+syntax = "proto3";
+package proto;
+
+message BlacklistInfoRes {
+	EAccount_BanReason ban_reason = 1;
+	uint32 expire_duration = 2;
+	uint32 ban_time = 3;
+}
+enum EAccount_BanReason {
+	BAN_REASON_UNKNOWN = 0;
+	BAN_REASON_IN_GAME_AUTO = 1;
+	BAN_REASON_REFUND = 2;
+	BAN_REASON_OTHERS = 3;
+	BAN_REASON_SKINMOD = 4;
+	BAN_REASON_IN_GAME_AUTO_NEW = 1014;
+}
+message ExternalIconInfo {
+  string external_icon = 1;
+  ExternalIconStatus status = 2;
+  ExternalIconShowType show_type = 3;
+}
+enum ExternalIconStatus {
+  ExternalIconStatus_NONE = 0;
+  ExternalIconStatus_NOT_IN_USE = 1;
+  ExternalIconStatus_IN_USE = 2;
+}
+enum ExternalIconShowType {
+  ExternalIconShowType_NONE = 0;
+  ExternalIconShowType_FRIEND = 1;
+  ExternalIconShowType_ALL = 2;
+}
+message SelectedItems {
+    uint32 avatar_id = 1;                     // Field 1: uint for avatar_id
+    uint32 skin_color = 2;                    // Field 2: uint for skin_color
+    repeated uint32 clothes = 3;              // Field 3: repeated uint for clothes
+    repeated LoadoutInfo loadouts = 4;        // Field 4: repeated LoadoutInfo messages
+    uint32 banner_id = 5;                     // Field 5: uint for banner_id
+    uint32 head_pic = 6;                      // Field 6: uint for head_pic
+    repeated uint32 slots = 7;                // Field 7: repeated uint for slots
+    ChoosedEmotes emotes = 8;                 // Field 8: ChoosedEmotes message
+    repeated uint32 shows = 9;                // Field 9: repeated uint for shows
+    uint32 pve_primary_weapon_skin = 10;      // Field 10: uint for pve_primary_weapon_skin
+    repeated uint32 ranking_cards = 11;       // Field 11: repeated uint for ranking_cards
+    uint32 pin_id = 12;                       // Field 12: uint for pin_id
+    uint32 game_bag_show = 13;                // Field 13: uint for game_bag_show
+    repeated RandomSlotInfo random_slots = 14;// Field 14: repeated RandomSlotInfo messages
+    uint32 title = 15;                        // Field 15: uint for title
+    QuickMsgSettings quick_msg_settings = 16; // Field 16: QuickMsgSettings message
+    repeated PveSlotInfo pve_slots = 17;      // Field 17: repeated PveSlotInfo messages
+    repeated uint32 collection_actions = 18;  // Field 18: repeated uint for collection_actions
+    repeated uint32 collection_skill_skins = 19;// Field 19: repeated uint for collection_skill_skins
+    uint32 load_out_v2 = 20;                  // Field 20: uint for load_out_v2
+    repeated uint32 final_shots = 21;         // Field 21: repeated uint for final_shots
+}
+message LoadoutInfo {
+    uint32 loadout_id = 1;
+    uint32 loadout_num = 2;
+    bool is_free_play = 3;
+}
+message ChoosedEmotes {
+    repeated ChoosedEmote emotes = 1;
+}
+message ChoosedEmote {
+    uint32 slot_id = 1;
+    uint32 emote_id = 2;
+}
+message RandomSlotInfo {
+    uint32 slot = 1;
+    repeated uint32 skin_ids = 2;
+    SlotChooseType choose_type = 3;
+}
+enum SlotChooseType {
+    SlotChooseType_NONE = 0;
+    SlotChooseType_SINGLE = 1;
+    SlotChooseType_RANDOM = 2;
+}
+message QuickMsgSettings {
+    uint32 voice = 1;
+    repeated QuickMsgModeSettings mode_settings = 2;
+}
+message QuickMsgModeSettings {
+    uint32 mode = 1;
+    repeated uint32 list = 2;
+    repeated uint32 roulette = 3;
+}
+message PveSlotInfo {
+    uint32 index = 1;
+    uint32 skin_id = 2;
+}
