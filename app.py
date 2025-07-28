@@ -1,28 +1,32 @@
-from flask import Flask, request, jsonify
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 import binascii
+from flask import Flask, request, jsonify
 import requests
-import random
-from datetime import datetime, timedelta
-
-from basics_pb2 import BlacklistInfoRes, EAccount_BanReason
 import uid_generator_pb2
+import basics_pb2
 from secret import key, iv
+from datetime import datetime
 
 app = Flask(__name__)
 
 def hex_to_bytes(hex_string):
     return bytes.fromhex(hex_string)
 
-def create_protobuf(uid, aditya=2):  # aditya=2 for bancheck
+def create_protobuf(akiru_, aditya):
     message = uid_generator_pb2.uid_generator()
-    message.akiru_ = uid
+    message.akiru_ = akiru_
     message.aditya = aditya
     return message.SerializeToString()
 
 def protobuf_to_hex(protobuf_data):
     return binascii.hexlify(protobuf_data).decode()
+
+def decode_hex(hex_string):
+    byte_data = binascii.unhexlify(hex_string.replace(' ', ''))
+    users = basics_pb2.CSGetPlayerPersonalShowRes()
+    users.ParseFromString(byte_data)
+    return users
 
 def encrypt_aes(hex_data, key, iv):
     key = key.encode()[:16]
@@ -32,31 +36,33 @@ def encrypt_aes(hex_data, key, iv):
     encrypted_data = cipher.encrypt(padded_data)
     return binascii.hexlify(encrypted_data).decode()
 
-def get_credentials(region):
-    region = region.upper()
-    if region == "IND":
-        return "3942040791", "EDD92B8948F4453F544C9432DFB4996D02B4054379A0EE083D8459737C50800B"
-    else:
-        return "uid", "password"
-
 def get_jwt_token(region):
-    uid, password = get_credentials(region)
-    jwt_url = f"https://jwt-aditya.vercel.app/token?uid={uid}&password={password}"
+    jwt_url = "https://ffmconnectlivegopgarenanowcom.vercel.app/token"
     response = requests.get(jwt_url)
     if response.status_code != 200:
         return None
-    return response.json()
+    
+    region = region.upper()
+    for token_info in response.json():
+        if region == "IND" and "IND" in token_info["region"]:
+            return token_info
+        elif region in ["NA", "BR", "SAC", "US"] and any(r in token_info["region"] for r in ["NA", "BR", "SAC", "US"]):
+            return token_info
+        elif region in ["SG", "ID", "VN", "TH", "TW", "ME", "PK", "RU", "CIS", "BD", "EUROPE"] and any(r in token_info["region"] for r in ["SG", "ID", "VN", "TH", "TW", "ME", "PK", "RU", "CIS", "BD", "EUROPE"]):
+            return token_info
+    
+    return None
 
-@app.route('/checkbanned', methods=['GET'])
-def check_banned():
+@app.route('/checkban', methods=['GET'])
+def main():
     uid = request.args.get('uid')
-    region = request.args.get('region', 'IND')
+    region = request.args.get('region')
 
-    if not uid:
-        return jsonify({"error": "Missing 'uid' query parameter"}), 400
+    if not uid or not region:
+        return jsonify({"error": "Missing 'uid' or 'region' query parameter"}), 400
 
     try:
-        uid_int = int(uid)
+        saturn_ = int(uid)
     except ValueError:
         return jsonify({"error": "Invalid UID"}), 400
 
@@ -67,7 +73,7 @@ def check_banned():
     api = jwt_info['serverUrl']
     token = jwt_info['token']
 
-    protobuf_data = create_protobuf(uid_int, 2)  # 2 for bancheck
+    protobuf_data = create_protobuf(saturn_, 1)
     hex_data = protobuf_to_hex(protobuf_data)
     encrypted_hex = encrypt_aes(hex_data, key, iv)
 
@@ -77,12 +83,13 @@ def check_banned():
         'Expect': '100-continue',
         'Authorization': f'Bearer {token}',
         'X-Unity-Version': '2018.4.11f1',
+        'X-GA': 'v1 1',
         'ReleaseVersion': 'OB49',
         'Content-Type': 'application/x-www-form-urlencoded',
     }
 
     try:
-        response = requests.post(f"{api}/CheckBlacklistInfo", headers=headers, data=bytes.fromhex(encrypted_hex))
+        response = requests.post(f"{api}/GetPlayerPersonalShow", headers=headers, data=bytes.fromhex(encrypted_hex))
         response.raise_for_status()
     except requests.RequestException:
         return jsonify({"error": "Failed to contact game server"}), 502
@@ -90,40 +97,78 @@ def check_banned():
     hex_response = response.content.hex()
 
     try:
-        ban_info = BlacklistInfoRes()
-        ban_info.ParseFromString(bytes.fromhex(hex_response))
+        users = decode_hex(hex_response)
     except Exception as e:
-        return jsonify({"error": f"Failed to parse ban info: {str(e)}"}), 500
-
-    # Map reason
-    reason_map = {
-        0: "Unknown",
-        1: "In-game auto detection",
-        2: "Refund abuse",
-        3: "Other reasons",
-        4: "Skin modification",
-        246: "In-game auto detection (new)"
-    }
-
-    ban_reason_code = ban_info.ban_reason
-    ban_reason = reason_map.get(ban_reason_code, "Unrecognized")
-
-    ban_time = datetime.utcfromtimestamp(ban_info.ban_time)
-    expires_at = ban_time + timedelta(seconds=ban_info.expire_duration)
-
-    ban_type = "Permanent" if ban_info.expire_duration == 0 else "Temporary"
+        return jsonify({"error": f"Failed to parse Protobuf: {str(e)}"}), 500
 
     result = {
         "uid": uid,
-        "is_banned": True,
-        "ban_reason_code": ban_reason_code,
-        "ban_reason": ban_reason,
-        "ban_time_unix": ban_info.ban_time,
-        "ban_time_utc": ban_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "expire_duration_sec": ban_info.expire_duration,
-        "expires_at_utc": expires_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "ban_type": ban_type
+        "is_banned": False,
+        "ban_reason_code": 0,
+        "ban_reason": "",
+        "ban_time_unix": 0,
+        "ban_time_utc": "",
+        "expire_duration_sec": 0,
+        "expires_at_utc": "",
+        "ban_type": ""
     }
+
+    # Check if user has ban information in the response
+    if hasattr(users, 'blacklist_info'):
+        ban_info = users.blacklist_info
+        result.update({
+            "is_banned": True,
+            "ban_reason_code": ban_info.ban_reason,
+            "ban_reason": basics_pb2.EAccount_BanReason.Name(ban_info.ban_reason),
+            "ban_time_unix": ban_info.ban_time,
+            "ban_time_utc": datetime.utcfromtimestamp(ban_info.ban_time).strftime('%Y-%m-%dT%H:%M:%SZ'),
+            "expire_duration_sec": ban_info.expire_duration,
+            "expires_at_utc": datetime.utcfromtimestamp(ban_info.ban_time + ban_info.expire_duration).strftime('%Y-%m-%dT%H:%M:%SZ'),
+            "ban_type": "Temporary" if ban_info.expire_duration > 0 else "Permanent"
+        })
+
+    if users.players:
+        result['players'] = []
+        for p in users.players:
+            player_data = {
+                'user_id': p.user_id,
+                'username': p.username,
+                'level': p.level,
+                'rank': p.rank,
+                'last_login': p.last_login,
+                'country_code': p.country_code,
+                'avatar': p.avatar,
+                'banner': p.banner,
+                'game_version': p.game_version,
+                'is_online': p.is_online,
+                'in_match': p.in_match
+            }
+            
+            if p.HasField("clan_tag"):
+                player_data['clan_tag'] = p.clan_tag.tag_display
+            
+            if p.HasField("premium"):
+                player_data['premium_level'] = p.premium.premium_level
+            
+            result['players'].append(player_data)
+
+    if users.HasField("clan"):
+        result["clan"] = {
+            "clan_name": users.clan.clan_name,
+            "clan_level": users.clan.clan_level,
+            "clan_xp": users.clan.clan_xp,
+            "clan_xp_required": users.clan.clan_xp_required
+        }
+
+    if users.HasField("inventory"):
+        result["inventory"] = {
+            "inventory_id": users.inventory.inventory_id,
+            "capacity": users.inventory.capacity,
+            "version": users.inventory.version,
+            "is_equipped": users.inventory.is_equipped,
+            "last_update": users.inventory.last_update,
+            "item_count": len(users.inventory.items)
+        }
 
     return jsonify(result)
 
