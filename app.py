@@ -90,7 +90,7 @@ def create_complete_player_activity(user_id):
 
     # Ban Info
     ban_info = BlacklistInfoRes()
-    ban_status = user_id % 5  # Varies
+    ban_status = user_id % 5
 
     if ban_status == 0:
         ban_info.ban_reason = EAccount_BanReason.BAN_REASON_UNKNOWN
@@ -111,20 +111,18 @@ def create_complete_player_activity(user_id):
     external_icon.external_icon = f"icon_{user_id % 1000}"
 
     icon_status = user_id % 3
-    if icon_status == 0:
-        external_icon.status = ExternalIconStatus.ExternalIconStatus_NONE
-    elif icon_status == 1:
-        external_icon.status = ExternalIconStatus.ExternalIconStatus_NOT_IN_USE
-    else:
-        external_icon.status = ExternalIconStatus.ExternalIconStatus_IN_USE
+    external_icon.status = [
+        ExternalIconStatus.ExternalIconStatus_NONE,
+        ExternalIconStatus.ExternalIconStatus_NOT_IN_USE,
+        ExternalIconStatus.ExternalIconStatus_IN_USE
+    ][icon_status]
 
     show_type = user_id % 3
-    if show_type == 0:
-        external_icon.show_type = ExternalIconShowType.ExternalIconShowType_NONE
-    elif show_type == 1:
-        external_icon.show_type = ExternalIconShowType.ExternalIconShowType_FRIEND
-    else:
-        external_icon.show_type = ExternalIconShowType.ExternalIconShowType_ALL
+    external_icon.show_type = [
+        ExternalIconShowType.ExternalIconShowType_NONE,
+        ExternalIconShowType.ExternalIconShowType_FRIEND,
+        ExternalIconShowType.ExternalIconShowType_ALL
+    ][show_type]
 
     return {
         "selected_items": activity,
@@ -202,6 +200,25 @@ def player_activity():
     }
 
     return jsonify(response_data)
+
+
+@app.route('/player-ban-check', methods=['GET'])
+def player_ban_check():
+    uid = request.args.get('uid')
+    region = request.args.get('region')
+
+    if not uid or not region:
+        return jsonify({"error": "Missing 'uid' or 'region' parameter"}), 400
+
+    try:
+        user_id = int(uid)
+    except ValueError:
+        return jsonify({"error": "Invalid UID"}), 400
+
+    # reuse ban info generation logic from main function
+    ban_info = create_complete_player_activity(user_id)["ban_info"]
+
+    return jsonify(build_ban_json(uid, ban_info))
 
 
 if __name__ == "__main__":
