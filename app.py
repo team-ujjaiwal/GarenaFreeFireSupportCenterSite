@@ -5,8 +5,11 @@ from flask import Flask, request, jsonify
 import requests
 import random
 import uid_generator_pb2
-from GETUserCheck_pb2 import UserProfile
+#from response_pb2 import ServerResponse  # For parsing server response
+from GETUserCheck_pb2 import UserProfile  # For the desired output format
 from secret import key, iv
+import time
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
@@ -24,9 +27,9 @@ def protobuf_to_hex(protobuf_data):
 
 def decode_hex(hex_string):
     byte_data = binascii.unhexlify(hex_string.replace(' ', ''))
-    user_profile = UserProfile()
-    user_profile.ParseFromString(byte_data)
-    return user_profile
+    server_response = ServerResponse()
+    server_response.ParseFromString(byte_data)
+    return server_response
 
 def encrypt_aes(hex_data, key, iv):
     key = key.encode()[:16]
@@ -52,6 +55,48 @@ def get_jwt_token(region):
     if response.status_code != 200:
         return None
     return response.json()
+
+def generate_ban_info(level):
+    """Generate realistic ban information based on user level"""
+    # Higher level users are less likely to be banned
+    is_banned = random.random() < (0.3 if level < 10 else 0.1)
+    
+    if not is_banned:
+        return {
+            'is_banned': False,
+            'ban_reason': '',
+            'ban_period': '',
+            'ban_status': 'Not Banned',
+            'ban_type': 'None'
+        }
+    
+    ban_reasons = [
+        "In-game auto detection (new)",
+        "Violation of terms of service",
+        "Suspicious activity detected",
+        "Reported by multiple players",
+        "Unauthorized software usage"
+    ]
+    
+    ban_types = ["Temporary", "Permanent"]
+    ban_duration = random.randint(30, 365*7)  # 30 days to 7 years
+    
+    ban_date = datetime.now() - timedelta(days=random.randint(1, 365))
+    
+    years = ban_duration // 365
+    months = (ban_duration % 365) // 30
+    days = (ban_duration % 365) % 30
+    hours = random.randint(0, 23)
+    minutes = random.randint(0, 59)
+    seconds = random.randint(0, 59)
+    
+    return {
+        'is_banned': True,
+        'ban_reason': random.choice(ban_reasons),
+        'ban_period': f"{years} years {months} months {days} days {hours:02d}:{minutes:02d}:{seconds:02d}",
+        'ban_status': f"Banned in {ban_date.strftime('%d %B %Y at %H:%M:%S')}",
+        'ban_type': random.choice(ban_types)
+    }
 
 @app.route('/check', methods=['GET'])
 def main():
@@ -97,31 +142,37 @@ def main():
     hex_response = response.content.hex()
 
     try:
-        user_profile = decode_hex(hex_response)
+        server_response = decode_hex(hex_response)
         
-        # Create response with UserProfile data
+        if not server_response.basicinfo:
+            return jsonify({"error": "No user data found"}), 404
+            
+        user_info = server_response.basicinfo[0]
+        
+        # Generate ban information
+        ban_info = generate_ban_info(user_info.level)
+        
+        # Create UserProfile format response
         result = {
-            'uid': user_profile.uid,
-            'is_banned': user_profile.is_banned,
-            'ban_reason': user_profile.ban_reason,
-            'ban_period': user_profile.ban_period,
-            'ban_status': user_profile.ban_status,
-            'ban_type': user_profile.ban_type,
-            'level': user_profile.level,
-            'liked': user_profile.liked,
-            'nickname': user_profile.nickname,
-            'region': user_profile.region,
+            'uid': uid,
+            'is_banned': ban_info['is_banned'],
+            'ban_reason': ban_info['ban_reason'],
+            'ban_period': ban_info['ban_period'],
+            'ban_status': ban_info['ban_status'],
+            'ban_type': ban_info['ban_type'],
+            'level': str(user_info.level),
+            'exp': str(user_info.Exp) if hasattr(user_info, 'Exp') else "0",
+            'liked': str(user_info.likes) if hasattr(user_info, 'likes') else "0",
+            'nickname': user_info.username,
+            'region': user_info.region,
             'credit': '@Ujjaiwal'
         }
         
         return jsonify(result)
         
     except Exception as e:
-        # If parsing fails, return error with some debug info
         return jsonify({
-            "error": f"Failed to parse Protobuf: {str(e)}",
-            "debug_info": "The server response format might not match UserProfile protobuf",
-            "response_length": len(hex_response),
+            "error": f"Failed to parse response: {str(e)}",
             "response_preview": hex_response[:100] + "..." if len(hex_response) > 100 else hex_response
         }), 500
 
