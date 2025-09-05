@@ -3,173 +3,58 @@ from Crypto.Util.Padding import pad
 import binascii
 from flask import Flask, request, jsonify
 import requests
-import time
-from datetime import datetime, timedelta
-
-from basics_pb2 import (
-    SelectedItems,
-    LoadoutInfo,
-    ChoosedEmotes,
-    ChoosedEmote,
-    RandomSlotInfo,
-    QuickMsgSettings,
-    QuickMsgModeSettings,
-    PveSlotInfo,
-    BlacklistInfoRes,
-    ExternalIconInfo,
-    EAccount_BanReason,
-    ExternalIconStatus,
-    ExternalIconShowType,
-    SlotChooseType
-)
-
+import random
+import uid_generator_pb2
+from GETUserCheck_pb2 import UserProfile
 from secret import key, iv
 
 app = Flask(__name__)
 
+def hex_to_bytes(hex_string):
+    return bytes.fromhex(hex_string)
 
-def create_complete_player_activity(user_id):
-    activity = SelectedItems()
+def create_protobuf(ujjaiwal_, garena):
+    message = uid_generator_pb2.uid_generator()
+    message.ujjaiwal_ = ujjaiwal_
+    message.garena = garena
+    return message.SerializeToString()
 
-    activity.avatar_id = 1001 + (user_id % 10)
-    activity.skin_color = 2 + (user_id % 3)
-    activity.clothes.extend([101, 102, 103, 104 + user_id % 5])
-    activity.banner_id = 5001 + (user_id % 7)
-    activity.head_pic = 2001 + (user_id % 4)
+def protobuf_to_hex(protobuf_data):
+    return binascii.hexlify(protobuf_data).decode()
 
-    for i in range(1, 4):
-        loadout = activity.loadouts.add()
-        loadout.loadout_id = i
-        loadout.loadout_num = i
-        loadout.is_free_play = (i % 2 == 0)
+def decode_hex(hex_string):
+    byte_data = binascii.unhexlify(hex_string.replace(' ', ''))
+    user_profile = UserProfile()  # Using the new protobuf class
+    user_profile.ParseFromString(byte_data)
+    return user_profile
 
-    activity.slots.extend([700 + i for i in range(5)])
+def encrypt_aes(hex_data, key, iv):
+    key = key.encode()[:16]
+    iv = iv.encode()[:16]
+    cipher = AES.new(key, AES.MODE_CBC, iv)
+    padded_data = pad(bytes.fromhex(hex_data), AES.block_size)
+    encrypted_data = cipher.encrypt(padded_data)
+    return binascii.hexlify(encrypted_data).decode()
 
-    for i in range(1, 5):
-        emote = ChoosedEmote()
-        emote.slot_id = i
-        emote.emote_id = 4000 + (user_id % 20) + i
-        activity.emotes.emotes.append(emote)
-
-    activity.shows.extend([800 + i for i in range(3)])
-    activity.pve_primary_weapon_skin = 900 + (user_id % 10)
-    activity.ranking_cards.extend([1000 + i for i in range(2)])
-    activity.pin_id = 1100 + (user_id % 5)
-    activity.game_bag_show = 1200 + (user_id % 3)
-
-    for i in range(1, 3):
-        random_slot = RandomSlotInfo()
-        random_slot.slot = i
-        random_slot.skin_ids.extend([500 + i * 10 + j for j in range(3)])
-        random_slot.choose_type = SlotChooseType.SlotChooseType_RANDOM if i % 2 else SlotChooseType.SlotChooseType_SINGLE
-        activity.random_slots.append(random_slot)
-
-    activity.title = 300 + (user_id % 10)
-
-    quick_msg = QuickMsgSettings()
-    quick_msg.voice = 1 + (user_id % 3)
-    for i in range(1, 3):
-        mode_setting = QuickMsgModeSettings()
-        mode_setting.mode = i
-        mode_setting.list.extend([i * 10 + j for j in range(1, 4)])
-        mode_setting.roulette.extend([i * 20 + j for j in range(1, 4)])
-        quick_msg.mode_settings.append(mode_setting)
-
-    activity.quick_msg_settings.CopyFrom(quick_msg)
-
-    for i in range(1, 4):
-        pve_slot = PveSlotInfo()
-        pve_slot.index = i
-        pve_slot.skin_id = 6000 + (user_id % 30) + i
-        activity.pve_slots.append(pve_slot)
-
-    activity.collection_actions.extend([1300 + i for i in range(4)])
-    activity.collection_skill_skins.extend([1400 + i for i in range(5)])
-    activity.load_out_v2 = 1500 + (user_id % 10)
-    activity.final_shots.extend([1600 + i for i in range(3)])
-
-    # Ban Info
-    ban_info = BlacklistInfoRes()
-    ban_status = user_id % 5
-
-    if ban_status == 0:
-        ban_info.ban_reason = EAccount_BanReason.BAN_REASON_UNKNOWN
-    elif ban_status == 1:
-        ban_info.ban_reason = EAccount_BanReason.BAN_REASON_SKINMOD
-    elif ban_status == 2:
-        ban_info.ban_reason = EAccount_BanReason.BAN_REASON_IN_GAME_AUTO
-    elif ban_status == 3:
-        ban_info.ban_reason = EAccount_BanReason.BAN_REASON_REFUND
+def get_credentials(region):
+    region = region.upper()
+    if region == "IND":
+        return "3943735419", "D00171F210873075DE973C7E40936D8A56A9E5FD4DFA7F2A2CE1ED07759F9DB6"
+    elif region in ["NA", "BR", "SAC", "US"]:
+        return "3943737998", "92EB4C721DB698B17C1BF61F8F7ECDEC55D814FB35ADA778FA5EE1DC0AEAEDFF"
     else:
-        ban_info.ban_reason = EAccount_BanReason.BAN_REASON_IN_GAME_AUTO_NEW
+        return "3943739516", "BFA0A0D9DF6D4EE1AA92354746475A429D775BCA4D8DD822ECBC6D0BF7B51886"
 
-    ban_info.expire_duration = 0 if ban_status == 0 else 86400
-    ban_info.ban_time = int(time.time()) - (3600 * 12 if ban_status else 0)
+def get_jwt_token(region):
+    uid, password = get_credentials(region)
+    jwt_url = f"https://100067.vercel.app/token?uid={uid}&password={password}"
+    response = requests.get(jwt_url)
+    if response.status_code != 200:
+        return None
+    return response.json()
 
-    # External Icon Info
-    external_icon = ExternalIconInfo()
-    external_icon.external_icon = f"icon_{user_id % 1000}"
-
-    icon_status = user_id % 3
-    external_icon.status = [
-        ExternalIconStatus.ExternalIconStatus_NONE,
-        ExternalIconStatus.ExternalIconStatus_NOT_IN_USE,
-        ExternalIconStatus.ExternalIconStatus_IN_USE
-    ][icon_status]
-
-    show_type = user_id % 3
-    external_icon.show_type = [
-        ExternalIconShowType.ExternalIconShowType_NONE,
-        ExternalIconShowType.ExternalIconShowType_FRIEND,
-        ExternalIconShowType.ExternalIconShowType_ALL
-    ][show_type]
-
-    return {
-        "selected_items": activity,
-        "ban_info": ban_info,
-        "external_icon": external_icon
-    }
-
-
-def build_ban_json(uid, ban_info: BlacklistInfoRes):
-    ban_reason_map = {
-        0: "Unknown",
-        1: "In-game auto detection",
-        2: "Refund abuse",
-        3: "Other reasons",
-        4: "Skin modification",
-        1014: "In-game auto detection (new)"
-    }
-
-    reason_code = ban_info.ban_reason
-    ban_reason = ban_reason_map.get(reason_code, "Unknown")
-    ban_time = ban_info.ban_time
-    duration = ban_info.expire_duration
-
-    if reason_code == 0:
-        return {
-            "uid": str(uid),
-            "is_banned": False,
-            "ban_info": None
-        }
-
-    ban_start = datetime.utcfromtimestamp(ban_time)
-    ban_end = ban_start + timedelta(seconds=duration)
-    return {
-        "uid": str(uid),
-        "is_banned": True,
-        "ban_reason_code": reason_code,
-        "ban_reason": ban_reason,
-        "ban_time_unix": ban_time,
-        "ban_time_utc": ban_start.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "expire_duration_sec": duration,
-        "expires_at_utc": ban_end.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "ban_type": "Permanent" if duration == 0 else "Temporary"
-    }
-
-
-@app.route('/player-activity', methods=['GET'])
-def player_activity():
+@app.route('/check', methods=['GET'])
+def main():
     uid = request.args.get('uid')
     region = request.args.get('region')
 
@@ -177,49 +62,61 @@ def player_activity():
         return jsonify({"error": "Missing 'uid' or 'region' query parameter"}), 400
 
     try:
-        user_id = int(uid)
+        saturn_ = int(uid)
     except ValueError:
         return jsonify({"error": "Invalid UID"}), 400
 
-    player_data = create_complete_player_activity(user_id)
-    selected_items = player_data["selected_items"]
-    ban_info = player_data["ban_info"]
-    external_icon = player_data["external_icon"]
+    jwt_info = get_jwt_token(region)
+    if not jwt_info or 'token' not in jwt_info:
+        return jsonify({"error": "Failed to fetch JWT token"}), 500
 
-    response_data = {
-        "uid": str(uid),
-        "region": region.upper(),
-        "is_banned": ban_info.ban_reason != 0,
-        "ban_info": build_ban_json(uid, ban_info),
-        "external_icon": {
-            "external_icon": external_icon.external_icon,
-            "status": ExternalIconStatus.Name(external_icon.status),
-            "show_type": ExternalIconShowType.Name(external_icon.show_type)
-        },
-        "timestamp": int(time.time())
+    api = jwt_info['serverUrl']
+    token = jwt_info['token']
+
+    protobuf_data = create_protobuf(saturn_, 1)
+    hex_data = protobuf_to_hex(protobuf_data)
+    encrypted_hex = encrypt_aes(hex_data, key, iv)
+
+    headers = {
+        'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 9; ASUS_Z01QD Build/PI)',
+        'Connection': 'Keep-Alive',
+        'Expect': '100-continue',
+        'Authorization': f'Bearer {token}',
+        'X-Unity-Version': '2018.4.11f1',
+        'X-GA': 'v1 1',
+        'ReleaseVersion': 'OB50',
+        'Content-Type': 'application/x-www-form-urlencoded',
     }
 
-    return jsonify(response_data)
+    try:
+        response = requests.post(f"{api}/GetPlayerPersonalShow", headers=headers, data=bytes.fromhex(encrypted_hex))
+        response.raise_for_status()
+    except requests.RequestException:
+        return jsonify({"error": "Failed to contact game server"}), 502
 
-
-@app.route('/player-ban-check', methods=['GET'])
-def player_ban_check():
-    uid = request.args.get('uid')
-    region = request.args.get('region')
-
-    if not uid or not region:
-        return jsonify({"error": "Missing 'uid' or 'region' parameter"}), 400
+    hex_response = response.content.hex()
 
     try:
-        user_id = int(uid)
-    except ValueError:
-        return jsonify({"error": "Invalid UID"}), 400
+        user_profile = decode_hex(hex_response)
+    except Exception as e:
+        return jsonify({"error": f"Failed to parse Protobuf: {str(e)}"}), 500
 
-    # reuse ban info generation logic from main function
-    ban_info = create_complete_player_activity(user_id)["ban_info"]
+    # Updated response parsing for the new UserProfile protobuf
+    result = {
+        'uid': user_profile.uid,
+        'is_banned': user_profile.is_banned,
+        'ban_reason': user_profile.ban_reason,
+        'ban_period': user_profile.ban_period,
+        'ban_status': user_profile.ban_status,
+        'ban_type': user_profile.ban_type,
+        'level': user_profile.level,
+        'liked': user_profile.liked,
+        'nickname': user_profile.nickname,
+        'region': user_profile.region,
+        'credit': '@Ujjaiwal'
+    }
 
-    return jsonify(build_ban_json(uid, ban_info))
-
+    return jsonify(result)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000)
