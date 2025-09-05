@@ -24,7 +24,7 @@ def protobuf_to_hex(protobuf_data):
 
 def decode_hex(hex_string):
     byte_data = binascii.unhexlify(hex_string.replace(' ', ''))
-    user_profile = UserProfile()  # Using the new protobuf class
+    user_profile = UserProfile()
     user_profile.ParseFromString(byte_data)
     return user_profile
 
@@ -91,32 +91,39 @@ def main():
     try:
         response = requests.post(f"{api}/GetPlayerPersonalShow", headers=headers, data=bytes.fromhex(encrypted_hex))
         response.raise_for_status()
-    except requests.RequestException:
-        return jsonify({"error": "Failed to contact game server"}), 502
+    except requests.RequestException as e:
+        return jsonify({"error": f"Failed to contact game server: {str(e)}"}), 502
 
     hex_response = response.content.hex()
 
     try:
         user_profile = decode_hex(hex_response)
+        
+        # Create response with UserProfile data
+        result = {
+            'uid': user_profile.uid,
+            'is_banned': user_profile.is_banned,
+            'ban_reason': user_profile.ban_reason,
+            'ban_period': user_profile.ban_period,
+            'ban_status': user_profile.ban_status,
+            'ban_type': user_profile.ban_type,
+            'level': user_profile.level,
+            'liked': user_profile.liked,
+            'nickname': user_profile.nickname,
+            'region': user_profile.region,
+            'credit': '@Ujjaiwal'
+        }
+        
+        return jsonify(result)
+        
     except Exception as e:
-        return jsonify({"error": f"Failed to parse Protobuf: {str(e)}"}), 500
-
-    # Updated response parsing for the new UserProfile protobuf
-    result = {
-        'uid': user_profile.uid,
-        'is_banned': user_profile.is_banned,
-        'ban_reason': user_profile.ban_reason,
-        'ban_period': user_profile.ban_period,
-        'ban_status': user_profile.ban_status,
-        'ban_type': user_profile.ban_type,
-        'level': user_profile.level,
-        'liked': user_profile.liked,
-        'nickname': user_profile.nickname,
-        'region': user_profile.region,
-        'credit': '@Ujjaiwal'
-    }
-
-    return jsonify(result)
+        # If parsing fails, return error with some debug info
+        return jsonify({
+            "error": f"Failed to parse Protobuf: {str(e)}",
+            "debug_info": "The server response format might not match UserProfile protobuf",
+            "response_length": len(hex_response),
+            "response_preview": hex_response[:100] + "..." if len(hex_response) > 100 else hex_response
+        }), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
